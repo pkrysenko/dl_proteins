@@ -1,18 +1,55 @@
 import hydra
 
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, RichProgressBar
 from lightning.pytorch.loggers import CSVLogger
+from omegaconf import OmegaConf, DictConfig
+from hydra.utils import instantiate
 
-from data.ligads import BinaryLigadsDL
-from arch.ligads import LigadTransformer
 
 F_VOCAB_SIZE = 128
 S_VOCAB_SIZE = 128
 
 d_model = 32
 
+
+@hydra.main(version_base=None, config_path="configs", config_name="main")
+def train(cfg: DictConfig):
+    # conf = OmegaConf.to_yaml(cfg)
+    print(cfg)
+
+    model = instantiate(cfg.model)
+    logger = CSVLogger(save_dir=cfg.trainer.output_folder, name="experiments")
+    dataloader = instantiate(cfg.dataloader)
+    ck_callback = ModelCheckpoint(
+        filename="model-{epoch}-{val_loss:.5f}",
+        mode="min",
+        save_last=True,
+    )
+    pb = RichProgressBar()
+
+    trainer = pl.Trainer(
+        accelerator="gpu",
+        max_epochs=5,
+        logger=logger,
+        callbacks=[ck_callback, pb],
+        log_every_n_steps=20,
+    )
+
+    trainer.fit(
+        model=model,
+        train_dataloaders=dataloader,
+    )
+    trainer.test(
+        model=model,
+        dataloaders=dataloader,
+        ckpt_path="best",
+    )
+
+
 if __name__ == "__main__":
+    train()
+    """
     pl.seed_everything(42)
     ck_callback = ModelCheckpoint(
         filename="model-{epoch}-{val_loss:.5f}", mode="max", save_last=True
@@ -45,3 +82,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(accelerator="gpu", max_epochs=5, callbacks=[ck_callback])
     trainer.fit(model=model, train_dataloaders=dl_ligad)
     trainer.test(model=model, dataloaders=dl_ligad, ckpt_path="best")
+    """

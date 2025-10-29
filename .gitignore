@@ -5,6 +5,7 @@ bpe_models/*
 lightning_logs
 *.model
 *.vocab
+outputs/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
