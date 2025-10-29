@@ -1,0 +1,30 @@
+task: "regression"
+
+model:
+  _target_: arch.ligads.LigadTransformer
+  d_model: 64
+  d_ff: 128
+  f_vocab_size: 128
+  s_vocab_size: 128
+  nheads: 8
+  num_encoder_layers: 5
+  num_decoder_layers: 5
+  d_fc_layers: [32, 16]
+  task: ${task}
+
+dataloader:
+  _target_: data.ligads.LigadsDL
+  csv_path: csv_dataset/filtered_binding_finalm.csv
+  f_seq_column: "Ligand"
+  s_seq_column: "Target_Chain"
+  out_column: "logIC50_scaled"
+  f_vocab_size: ${model.f_vocab_size}
+  s_vocab_size: ${model.s_vocab_size}
+  batch_size: 16
+  task: ${task}
+
+trainer:
+  output_folder: ${hydra:runtime.output_dir}
+  max_epochs: 5
+
+

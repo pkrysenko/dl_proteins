@@ -35,7 +35,7 @@ def pad_collate(batch):
     return [f_seq, s_seq, score]
 
 
-class BinaryLigadsDL(pl.LightningDataModule):
+class LigadsDL(pl.LightningDataModule):
     def __init__(
         self,
         csv_path,
