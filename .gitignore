@@ -6,6 +6,8 @@ lightning_logs
 *.model
 *.vocab
 outputs/*
+outputs_regression/*
+dataset/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

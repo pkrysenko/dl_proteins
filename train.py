@@ -1,16 +1,14 @@
 import hydra
 
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint, RichProgressBar
+from lightning.pytorch.callbacks import (
+    ModelCheckpoint,
+    RichProgressBar,
+    LearningRateMonitor,
+)
 from lightning.pytorch.loggers import CSVLogger
 from omegaconf import OmegaConf, DictConfig
 from hydra.utils import instantiate
-
-
-F_VOCAB_SIZE = 128
-S_VOCAB_SIZE = 128
-
-d_model = 32
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="main")
@@ -20,6 +18,7 @@ def train(cfg: DictConfig):
 
     model = instantiate(cfg.model)
     logger = CSVLogger(save_dir=cfg.trainer.output_folder, name="experiments")
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
     dataloader = instantiate(cfg.dataloader)
     ck_callback = ModelCheckpoint(
         filename="model-{epoch}-{val_loss:.5f}",
@@ -29,16 +28,21 @@ def train(cfg: DictConfig):
     pb = RichProgressBar()
 
     trainer = pl.Trainer(
-        accelerator="gpu",
-        max_epochs=5,
+        accelerator="cuda",
+        max_epochs=cfg.trainer.max_epochs,
         logger=logger,
-        callbacks=[ck_callback, pb],
-        log_every_n_steps=20,
+        callbacks=[ck_callback, pb, lr_monitor],
+        log_every_n_steps=512,
+        gradient_clip_val=5,
+        use_distributed_sampler=False,
+        accumulate_grad_batches=16,
     )
 
+    restore_path = cfg.trainer.restore_path if cfg.trainer.restore_path else None
     trainer.fit(
         model=model,
         train_dataloaders=dataloader,
+        ckpt_path=restore_path,
     )
     trainer.test(
         model=model,
@@ -49,37 +53,3 @@ def train(cfg: DictConfig):
 
 if __name__ == "__main__":
     train()
-    """
-    pl.seed_everything(42)
-    ck_callback = ModelCheckpoint(
-        filename="model-{epoch}-{val_loss:.5f}", mode="max", save_last=True
-    )
-
-    logger = CSVLogger("logs", name="experiments")
-    dl_ligad = BinaryLigadsDL(
-        csv_path="csv_dataset/filtered_binding_finalm.csv",
-        f_seq_column="Ligand",
-        s_seq_column="Target_Chain",
-        out_column="logIC50_scaled",
-        f_vocab_size=F_VOCAB_SIZE,
-        s_vocab_size=S_VOCAB_SIZE,
-        batch_size=16,
-        task="regression",
-    )
-
-    model = LigadTransformer(
-        d_model=d_model,
-        d_ff=64,
-        f_vocab_size=F_VOCAB_SIZE,
-        s_vocab_size=S_VOCAB_SIZE,
-        nheads=8,
-        num_encoder_layers=5,
-        num_decoder_layers=5,
-        d_fc_layers=[32, 16],
-        task="regression",
-    )
-
-    trainer = pl.Trainer(accelerator="gpu", max_epochs=5, callbacks=[ck_callback])
-    trainer.fit(model=model, train_dataloaders=dl_ligad)
-    trainer.test(model=model, dataloaders=dl_ligad, ckpt_path="best")
-    """
