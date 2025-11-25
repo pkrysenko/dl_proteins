@@ -71,6 +71,9 @@ class SequenceLengthSampler(Sampler):
 
     def __iter__(self):
         batches = []
+        if self.shuffle:
+            random.shuffle(self.buckets)
+
         for bucket in self.buckets:
 
             for i in range(0, len(bucket), self.batch_size):
@@ -244,7 +247,7 @@ class LigadsDL(pl.LightningDataModule):
             lengths=lengthes,
             batch_size=self.batch_size,
             auto_bins=False,
-            bin_size=32,
+            bin_size=64,
         )
         return DataLoader(
             self.ligad_train,
@@ -254,11 +257,18 @@ class LigadsDL(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
+        lengthes = [row[0].size()[0] for row in self.ligad_valid]
+        sampler = SequenceLengthSampler(
+            data_source=self.ligad_valid,
+            lengths=lengthes,
+            batch_size=self.batch_size,
+            auto_bins=False,
+            bin_size=64,
+        )
         return DataLoader(
             self.ligad_valid,
-            batch_size=self.batch_size,
             collate_fn=pad_collate,
-            drop_last=True,
+            batch_sampler=sampler,
             pin_memory=True,
         )
 

@@ -2,8 +2,8 @@ task: "binary"
 
 model:
   _target_: arch.ligads.LigadTransformer
-  d_model: 256
-  d_ff: 1024
+  d_model: 128
+  d_ff: 512
   f_vocab_size: 256
   s_vocab_size: 128
   nheads: 4
@@ -21,7 +21,7 @@ dataloader:
   out_column: "IAM"
   f_vocab_size: ${model.f_vocab_size}
   s_vocab_size: ${model.s_vocab_size}
-  batch_size: 8
+  batch_size: 16
   task: ${task}
 
 trainer:

@@ -85,7 +85,7 @@ class LigadTransformer(pl.LightningModule):
         self.embedding_f = torch.nn.Embedding(f_vocab_size, d_model)
         self.embedding_s = torch.nn.Embedding(s_vocab_size, d_model)
 
-        self.pos_enc = PositionalEncoding(d_model, dropout=0.1)
+        self.pos_enc = PositionalEncoding(d_model, dropout=0.0)
         # self.pos_enc_s = PositionalEncoding(d_model)
 
         self.transformer = nn.Transformer(
@@ -95,14 +95,14 @@ class LigadTransformer(pl.LightningModule):
             num_encoder_layers=num_encoder_layers,
             num_decoder_layers=num_decoder_layers,
             batch_first=True,
-            dropout=0.25,
+            dropout=0.15,
         )
 
         self.pooling = masked_mean
         d_fc_layers.insert(0, d_model)
         self.fc_block = nn.Sequential()
         for in_feat, out_feat in zip(d_fc_layers, d_fc_layers[1:]):
-            self.fc_block.append(nn.Dropout(0.25))
+            self.fc_block.append(nn.Dropout(0.2))
             self.fc_block.append(nn.Linear(in_feat, out_feat))
             self.fc_block.append(nn.LeakyReLU())
 
@@ -198,7 +198,7 @@ class LigadTransformer(pl.LightningModule):
         self.log_dict(metrics_log, on_epoch=True, logger=True)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-5, weight_decay=0.001)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=5e-6, weight_decay=0.01)
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
             T_max=self.max_epochs,
