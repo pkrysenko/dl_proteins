@@ -1,4 +1,5 @@
 import torch
+import pl_bolts
 from torch.nn import functional as F
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
@@ -75,6 +76,7 @@ class LigadTransformer(pl.LightningModule):
         num_encoder_layers,
         num_decoder_layers,
         d_fc_layers,
+        max_epochs,
         task="binary",
         *args,
         **kwargs
@@ -83,7 +85,8 @@ class LigadTransformer(pl.LightningModule):
         self.embedding_f = torch.nn.Embedding(f_vocab_size, d_model)
         self.embedding_s = torch.nn.Embedding(s_vocab_size, d_model)
 
-        self.pos_enc_f = PositionalEncoding(d_model)
+        self.pos_enc = PositionalEncoding(d_model, dropout=0.0)
+        # self.pos_enc_s = PositionalEncoding(d_model)
 
         self.transformer = nn.Transformer(
             d_model=d_model,
@@ -92,14 +95,16 @@ class LigadTransformer(pl.LightningModule):
             num_encoder_layers=num_encoder_layers,
             num_decoder_layers=num_decoder_layers,
             batch_first=True,
+            dropout=0.15,
         )
 
         self.pooling = masked_mean
         d_fc_layers.insert(0, d_model)
         self.fc_block = nn.Sequential()
         for in_feat, out_feat in zip(d_fc_layers, d_fc_layers[1:]):
+            self.fc_block.append(nn.Dropout(0.2))
             self.fc_block.append(nn.Linear(in_feat, out_feat))
-            self.fc_block.append(nn.ReLU())
+            self.fc_block.append(nn.LeakyReLU())
 
         self.out_act = F.sigmoid if task == "binary" else F.relu
         self.out_layer = nn.Linear(d_fc_layers[-1], 1)
@@ -109,22 +114,46 @@ class LigadTransformer(pl.LightningModule):
         self.train_metrics = ["mse"]
         self.valid_metrics = ["mse"]
         self.test_metrics = ["rmse", "r2", "pearson"]
-        self.train_metrics_mc = MetricCollection(
-            prefix="train_", metrics=[MeanSquaredError(squared=True)]
-        )
-        self.val_metrics_mc = MetricCollection(
-            prefix="val_", metrics=[MeanSquaredError(squared=True)]
-        )
-        self.test_metrics_mc = MetricCollection(
-            prefix="test_",
-            metrics=[MeanSquaredError(squared=False), PearsonCorrCoef(), R2Score()],
-        )
+        if task == "regression":
+            self.train_metrics_mc = MetricCollection(
+                prefix="train_", metrics=[MeanSquaredError(squared=True)]
+            )
+            self.val_metrics_mc = MetricCollection(
+                prefix="val_", metrics=[MeanSquaredError(squared=True)]
+            )
+            self.test_metrics_mc = MetricCollection(
+                prefix="test_",
+                metrics=[MeanSquaredError(squared=False), PearsonCorrCoef(), R2Score()],
+            )
+        else:
+            self.train_metrics_mc = MetricCollection(
+                prefix="train_", metrics=[BinaryAccuracy()]
+            )
+            self.val_metrics_mc = MetricCollection(
+                prefix="val_", metrics=[BinaryAccuracy()]
+            )
+            self.test_metrics_mc = MetricCollection(
+                prefix="test_",
+                metrics=[
+                    BinaryAccuracy(),
+                    BinaryAUROC(),
+                    BinaryRecall(),
+                    BinaryPrecision(),
+                ],
+            )
+        self.task = task
+        self.max_epochs = max_epochs
 
     def forward(self, f_seq, s_seq):
         embed_f_seq = self.embedding_f(f_seq)
         embed_s_seq = self.embedding_s(s_seq)
 
-        transformer_out = self.transformer(embed_f_seq, embed_s_seq)
+        embed_f_seq = self.pos_enc(embed_f_seq)
+        embed_s_seq = self.pos_enc(embed_s_seq)
+
+        transformer_out = self.transformer(
+            embed_f_seq, embed_s_seq, src_is_causal=False, tgt_is_causal=False
+        )
         mask_out = get_mask(transformer_out, padding_value=0)
 
         pooled_out = self.pooling(transformer_out, mask_out, dim=1)
@@ -169,7 +198,19 @@ class LigadTransformer(pl.LightningModule):
         self.log_dict(metrics_log, on_epoch=True, logger=True)
 
     def configure_optimizers(self):
-        return torch.optim.RAdam(self.parameters(), lr=1e-5)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=5e-6, weight_decay=0.01)
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.max_epochs,
+            eta_min=1e-7,
+        )
+        lr_scheduler_config = {
+            "scheduler": lr_scheduler,
+            "interval": "epoch",
+            "frequency": 1,
+            "name": None,
+        }
+        return [optimizer], [lr_scheduler_config]
 
 
 if __name__ == "__main__":
