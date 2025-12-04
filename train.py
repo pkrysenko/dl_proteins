@@ -35,7 +35,7 @@ def train(cfg: DictConfig):
         log_every_n_steps=512,
         gradient_clip_val=5,
         use_distributed_sampler=False,
-        accumulate_grad_batches=4,
+        accumulate_grad_batches=2,
     )
 
     restore_path = cfg.trainer.restore_path if cfg.trainer.restore_path else None

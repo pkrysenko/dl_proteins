@@ -41,6 +41,35 @@ def pad_collate(batch):
     return [f_seq, s_seq, score]
 
 
+class SmartBatchSampler(Sampler):
+
+    def __init__(self, data_source, batch_size, lengths, shuffle=False):
+        self.data_source = data_source
+        self.batch_size = batch_size
+
+        self.lengths = lengths
+        self.shuffle = shuffle
+
+    def __iter__(self):
+        indices_with_lengths = list(enumerate(self.lengths))
+
+        indices_with_lengths.sort(key=lambda x: (x[1], random.random()))
+
+        sorted_indices = [x[0] for x in indices_with_lengths]
+
+        batches = [
+            sorted_indices[i : i + self.batch_size]
+            for i in range(0, len(sorted_indices), self.batch_size)
+        ]
+        if self.shuffle:
+            random.shuffle(batches)
+
+        return iter(batches)
+
+    def __len__(self):
+        return (len(self.data_source) + self.batch_size - 1) // self.batch_size
+
+
 class SequenceLengthSampler(Sampler):
 
     def __init__(
@@ -242,6 +271,7 @@ class LigadsDL(pl.LightningDataModule):
     def train_dataloader(self):
         # [print(row[0].size()) for row in self.ligad_train]
         lengthes = [row[0].size()[0] for row in self.ligad_train]
+
         sampler = SequenceLengthSampler(
             data_source=self.ligad_train,
             lengths=lengthes,
@@ -249,6 +279,15 @@ class LigadsDL(pl.LightningDataModule):
             auto_bins=False,
             bin_size=64,
         )
+
+        """
+        sampler = SmartBatchSampler(
+            data_source=self.ligad_train,
+            lengths=lengthes,
+            batch_size=self.batch_size,
+            shuffle=True,
+        )
+        """
         return DataLoader(
             self.ligad_train,
             collate_fn=pad_collate,
@@ -258,13 +297,24 @@ class LigadsDL(pl.LightningDataModule):
 
     def val_dataloader(self):
         lengthes = [row[0].size()[0] for row in self.ligad_valid]
+
         sampler = SequenceLengthSampler(
             data_source=self.ligad_valid,
             lengths=lengthes,
             batch_size=self.batch_size,
+            shuffle=False,
             auto_bins=False,
             bin_size=64,
         )
+
+        """
+        sampler = SmartBatchSampler(
+            data_source=self.ligad_valid,
+            lengths=lengthes,
+            batch_size=self.batch_size,
+            shuffle=False,
+        )
+        """
         return DataLoader(
             self.ligad_valid,
             collate_fn=pad_collate,
@@ -277,6 +327,7 @@ class LigadsDL(pl.LightningDataModule):
             self.ligad_test,
             batch_size=self.batch_size,
             collate_fn=pad_collate,
+            shuffle=False,
             drop_last=True,
             pin_memory=True,
         )

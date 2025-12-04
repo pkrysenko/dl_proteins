@@ -2,20 +2,29 @@ task: "binary"
 
 model:
   _target_: arch.ligads.LigadTransformer
-  d_model: 128
-  d_ff: 512
+  d_model: 256
+  d_ff: 768
   f_vocab_size: 256
   s_vocab_size: 128
-  nheads: 4
-  num_encoder_layers: 8
-  num_decoder_layers: 8
-  d_fc_layers: [512, 64]
+  nheads: 8
+  num_encoder_layers: 7
+  num_decoder_layers: 7
+  d_fc_layers: [512, 128]
   task: ${task}
   max_epochs: ${trainer.max_epochs}
+  conv_compressor:
+    _target_: arch.ligads.ConvCompressorSmall
+    in_channels: ${model.d_model}
+    out_channels: ${model.d_model}
+    kernel_size: 9
+    stride: 6
+    padding: 1
+    groups: ${model.d_model}
+  learning_rate: 1e-5
 
 dataloader:
   _target_: data.ligads.LigadsDL
-  data_dir: dataset/filtered_binding_finalm_full_14.0_-6.0
+  data_dir: dataset/filtered_binding_finalm_full_z_2.642_1.505
   f_seq_column: "Target_Chain"
   s_seq_column: "Ligand"
   out_column: "IAM"
@@ -26,7 +35,7 @@ dataloader:
 
 trainer:
   output_folder: ${hydra:runtime.output_dir}
-  max_epochs: 20
+  max_epochs: 30
   restore_path: ~
 
 
