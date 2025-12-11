@@ -15,6 +15,27 @@ from torchmetrics.classification import (
 from torchmetrics.regression import PearsonCorrCoef, R2Score, MeanSquaredError
 
 
+def get_warmup_cosine_scheduler(
+    optimizer, warmup_steps, total_steps, min_lr_ratio=0.001, start_factor=0.001
+):
+    # Phase 1: Linear Warmup (0 -> Max LR)
+    scheduler1 = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=start_factor, end_factor=1.0, total_iters=warmup_steps
+    )
+
+    # Phase 2: Cosine Decay (Max LR -> Min LR)
+    scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=(total_steps - warmup_steps),
+        eta_min=optimizer.param_groups[0]["lr"] * min_lr_ratio,
+    )
+
+    # Chain them
+    return torch.optim.lr_scheduler.SequentialLR(
+        optimizer, schedulers=[scheduler1, scheduler2], milestones=[warmup_steps]
+    )
+
+
 def masked_mean(
     input,
     mask,
@@ -239,7 +260,7 @@ class LigadTransformer(pl.LightningModule):
         )
         mask_out = get_mask(transformer_out, padding_value=0)
 
-        pooled_out = self.pooling(transformer_out)
+        pooled_out = self.pooling(transformer_out, mask_out)
 
         fc_out = self.fc_block(pooled_out)
         out = self.out_layer(fc_out)
@@ -283,31 +304,47 @@ class LigadTransformer(pl.LightningModule):
 
         self.log_dict(metrics_log, on_epoch=True, logger=True)
 
+    def get_optimizers(self, weight_decay=0.01, muon_lr=0.02, adam_lr=0.001):
+        muon_params = []
+        adam_params = []
+
+        for name, p in self.named_parameters():
+            if not p.requires_grad:
+                continue
+
+            if p.ndim == 2 and "embed" not in name:
+                muon_params.append(p)
+            else:
+                adam_params.append(p)
+
+        opt_muon = torch.optim.Muon(muon_params, lr=muon_lr, momentum=0.95)
+
+        opt_adam = torch.optim.AdamW(
+            adam_params, lr=adam_lr, betas=(0.9, 0.95), weight_decay=weight_decay
+        )
+
+        return opt_muon, opt_adam
+
     def configure_optimizers(self):
-        optimizer = torch.optim.RAdam(
-            self.parameters(), lr=self.learning_rate, weight_decay=0.0001
-        )
-        # lr_scheduler = pl_bolts.optimizers.LinearWarmupCosineAnnealingLR(
-        #     optimizer,
-        #     warmup_start_lr=1e-8,
-        #     eta_min=1e-8,
-        #     warmup_epochs=3,
-        #     max_epochs=self.max_epochs,
-        # )
-
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=self.max_epochs,
-            eta_min=1e-7,
+        opt_adam = torch.optim.AdamW(
+            self.parameters(), lr=self.learning_rate, weight_decay=0.01
         )
 
-        lr_scheduler_config = {
-            "scheduler": lr_scheduler,
-            "interval": "epoch",
+        adam_scheduler = get_warmup_cosine_scheduler(
+            opt_adam,
+            warmup_steps=40334 * 3,
+            total_steps=40334 * (20 - 3),
+            min_lr_ratio=0.01,
+            start_factor=0.01,
+        )
+
+        lr_config = {
+            "scheduler": adam_scheduler,
+            "interval": "step",
             "frequency": 1,
             "name": None,
         }
-        return [optimizer], [lr_scheduler_config]
+        return [opt_adam], [lr_config]
 
 
 if __name__ == "__main__":

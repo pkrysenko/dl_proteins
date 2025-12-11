@@ -57,10 +57,11 @@ class SmartBatchSampler(Sampler):
 
         sorted_indices = [x[0] for x in indices_with_lengths]
 
-        batches = [
-            sorted_indices[i : i + self.batch_size]
-            for i in range(0, len(sorted_indices), self.batch_size)
-        ]
+        batches = []
+        for i in range(0, len(sorted_indices), self.batch_size):
+            batch = sorted_indices[i : i + self.batch_size]
+            batches.append(batch)
+
         if self.shuffle:
             random.shuffle(batches)
 
@@ -101,6 +102,8 @@ class SequenceLengthSampler(Sampler):
     def __iter__(self):
         batches = []
         if self.shuffle:
+            for b in self.buckets:
+                random.shuffle(b)
             random.shuffle(self.buckets)
 
         for bucket in self.buckets:
@@ -277,9 +280,8 @@ class LigadsDL(pl.LightningDataModule):
             lengths=lengthes,
             batch_size=self.batch_size,
             auto_bins=False,
-            bin_size=64,
+            bin_size=80,
         )
-
         """
         sampler = SmartBatchSampler(
             data_source=self.ligad_train,

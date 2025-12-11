@@ -9,6 +9,7 @@ outputs/*
 outputs_regression/*
 dataset/*
 binary_train_3.6m/*
+results/*
 
 
 # Byte-compiled / optimized / DLL files
